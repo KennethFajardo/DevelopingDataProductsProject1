@@ -1,0 +1,89 @@
+---
+title: "Total Covid Cases in the World"
+author: "Kenneth Fajardo"
+date: "6/5/2021"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+This presentation demonstrates the use of the Leaflet package in R. The data that we will be using here is the COVID data made available by [Our World In Data]("https://github.com/owid/covid-19-data/tree/master/public/data/"), focusing on COVID activity in Asia, as of 2021-06-03. Geodata are pulled from \@johan's [repo]("https://github.com/johan/world.geo.json").
+
+## Initialization
+Load the needed libraries
+```{r lib, message=FALSE}
+library(leaflet) # for generating interactive maps
+library(geojsonio) # for retrieving geodata
+library(dplyr) # for cleaning and manipulating data
+library(RColorBrewer) # for coloring the choropleth
+```
+
+Download the data.
+```{r dl, eval=FALSE}
+download.file("https://raw.githubusercontent.com/owid/covid-19-data/
+              master/public/data/owid-covid-data.csv", "covid.csv")
+```
+
+***
+Read the data.
+```{r read}
+covid <- read.csv("covid.csv")
+WorldCountry <-geojsonio::geojson_read("./data/countries.geo.json",
+                                       what = "sp")
+```
+
+Select columns describing total cases in Asia per country.
+```{r total, message=FALSE}
+covid <- covid[,grep("total|iso|location|date", names(covid))]
+covid <- covid %>% filter(date == "2021-06-03") %>% 
+            group_by(iso_code, location) %>% 
+            summarise(total = round(sum(total_cases ,na.rm=TRUE), 0))
+covid <- covid[-grep("OWID", covid$iso_code),]
+```
+
+## Generate choropleth
+**Total number of COVID cases per country as of 2021-06-03**
+```{r geodata, echo=FALSE, message=FALSE, comment=""}
+# Create base map
+data_Map <- WorldCountry[WorldCountry$id %in% covid$iso_code, ]
+covid <- covid[covid$iso_code %in% data_Map@data$id,]
+Map <- leaflet(data_Map) %>% addTiles() %>% addPolygons()
+
+# Set bin and color for choropleth map
+bins <- c(0, 1000, 10000, 100000, 500000, 1000000, 5000000, 10000000, 20000000, Inf)
+pal <- colorBin(rev(brewer.pal(9, "Reds")), domain = covid$total, bins = bins, reverse = TRUE)
+
+# Set labels
+labels <- sprintf(
+  "<strong>%s</strong> <br/>%s Total Cases <sup></sup>",
+  data_Map@data$name, format(covid$total, scientific = FALSE, big.mark = ",")) %>%
+    lapply(htmltools::HTML)
+
+# Customize map
+Map %>% addPolygons(
+  fillColor = ~pal(covid$total),
+  weight = 1,
+  stroke = FALSE,
+  color = "white",
+  opacity = 0.2,
+  dashArray = '2',
+  fillOpacity = 0.3,
+  highlight = highlightOptions(
+    weight = 2,
+    color = "red",
+    dashArray = "",
+    fillOpacity = 0.4,
+    bringToFront = TRUE),
+  label = labels,
+  labelOptions = labelOptions(
+    style = list("font-weight" = "normal", padding = "3px 8px"),
+    textsize = "15px",
+    direction = "auto")
+) %>% addLegend(pal = pal, values = covid$total, opacity = 0.7, title = "Covid Cases",
+  position = "bottomright")
+```
+
+<font size="2">Note that there are **issues** in mapping COVID cases for the **US**. However, the goal of this project is to experiment on Leaflet.</font>
